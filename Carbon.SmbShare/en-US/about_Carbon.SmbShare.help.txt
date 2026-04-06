@@ -1,0 +1,8 @@
+TOPIC
+    about_Carbon.SmbShare
+
+SHORT DESCRIPTION
+    Carbon.SmbShare is a PowerShell module for...
+
+LONG DESCRIPTION
+    The Carbon.SmbShare PowerShell module...

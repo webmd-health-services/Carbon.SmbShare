@@ -1,0 +1,72 @@
+
+Build:
+- PowerShell: prism install | Format-Table -Auto
+  .ExceptDuring: Clean
+
+- Version:
+    Path: Carbon.SmbShare\Carbon.SmbShare.psd1
+    Prerelease:
+    - main: ""
+    - "*": rc1
+    IncrementPrereleaseVersion: true
+
+# Update the AppVeyor build/version number.
+- Exec: appveyor UpdateBuild -Version "$(WHISKEY_SEMVER2)+$(WHISKEY_BUILD_NUMBER)"
+  .OnlyBy: BuildServer
+
+# Dot-sourcing files is expensive. Move all functions into .psm1 file to improve import speed. Do this before testing
+# to ensure the module still works.
+- MergeFile:
+    .OnlyBy: BuildServer
+    # Builds run twice on some serves. Only run this step if the module hasn't been merged yet.
+    IfExists: Carbon.SmbShare\Functions\*.ps1
+    Path:
+    - Carbon.SmbShare\Functions\*.ps1
+    DestinationPath: Carbon.SmbShare\Carbon.SmbShare.psm1
+    DeleteSourceFiles: true
+    TextSeparator: "$(NewLine)$(NewLine)"
+
+- PowerShell: init.ps1
+  .ExceptDuring: Clean
+
+- PowerShell: reset.ps1
+  .OnlyDuring: Clean
+
+- CopyFile:
+    Path:
+    - CHANGELOG.md
+    - README.md
+    - LICENSE.txt
+    - NOTICE.txt
+    DestinationDirectory: Carbon.SmbShare
+
+- Zip:
+    ArchivePath: $(WHISKEY_OUTPUT_DIRECTORY)\Carbon.SmbShare-$(WHISKEY_SEMVER2).zip
+    Path:
+    - Carbon.SmbShare
+    Exclude:
+    - "*.pdb"
+    - "*.orig"
+
+- Exec: appveyor PushArtifact '$(WHISKEY_OUTPUT_DIRECTORY)\Carbon.SmbShare-$(WHISKEY_SEMVER2).zip' '-DeploymentName' 'GitHub'
+  .OnlyBy: BuildServer
+
+- PublishPowerShellModule:
+    Path: Carbon.SmbShare
+
+- Exec: appveyor PushArtifact '$(WHISKEY_OUTPUT_DIRECTORY)\Carbon.SmbShare.$(WHISKEY_SEMVER2_NO_BUILD_METADATA).nupkg' -DeploymentName 'PowerShellGallery'
+  .OnlyBy: BuildServer
+
+- Pester:
+    Configuration:
+        Run:
+            Path: Tests\*.Tests.ps1
+            Exit: true
+            Throw: true
+        TestResult:
+            Enabled: true
+            OutputPath: .output\pester.xml
+            TestSuiteName: Carbon.SmbShare
+        Output:
+            Verbosity: Detailed
+
