@@ -1,29 +1,24 @@
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#     http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
 
 #Requires -Version 5.1
 Set-StrictMode -Version 'Latest'
 
-if (-not (Get-Command -Name 'Get-WmiObject' -ErrorAction Ignore))
-{
-    $msgs = 'Install-CSmbShare tests will not be run because because the Get-WmiObject command does not exist.'
-    Write-Warning $msgs
-    return
-}
-
 BeforeAll {
     Set-StrictMode -Version 'Latest'
 
-    & (Join-Path -Path $PSScriptRoot -ChildPath 'Initialize-CarbonTest.ps1' -Resolve)
+    Import-Module -Name (Join-Path -Path $PSScriptRoot -ChildPath '..\Carbon.SmbShare' -Resolve) -Verbose:$false
+
+    Import-Module -Name (Join-Path -Path $PSScriptRoot -ChildPath '..\PSModules\Carbon' -Resolve) `
+                  -Function @('Install-CGroup') `
+                  -Prefix 'T' `
+                  -Verbose:$false
+    Import-Module -Name (Join-Path -Path $PSScriptRoot -ChildPath '..\Carbon.SmbShare\M\Carbon.Accounts' -Resolve) `
+                  -Function @('Resolve-CPrincipalName') `
+                  -Prefix 'T' `
+                  -Verbose:$false
+    Import-Module -Name (Join-Path -Path $PSScriptRoot -ChildPath '..\Carbon.SmbShare\M\Carbon.FileSystem' -Resolve) `
+                  -Function @('New-CTempDirectory') `
+                  -Prefix 'T' `
+                  -Verbose:$false
 
     $script:baseShareName = $PSCommandPath | Split-Path -Leaf
     $script:ShareName = $null
@@ -35,9 +30,9 @@ BeforeAll {
     $script:Remarks = [Guid]::NewGuid().ToString()
     $script:testNum = 0
 
-    Install-CGroup -Name $script:fullAccessGroup -Description 'Carbon group for testing full share permissions.'
-    Install-CGroup -Name $script:changeAccessGroup -Description 'Carbon group for testing change share permissions.'
-    Install-CGroup -Name $script:readAccessGroup -Description 'Carbon group for testing read share permissions.'
+    Install-TCGroup -Name $script:fullAccessGroup -Description 'Carbon group for testing full share permissions.'
+    Install-TCGroup -Name $script:changeAccessGroup -Description 'Carbon group for testing change share permissions.'
+    Install-TCGroup -Name $script:readAccessGroup -Description 'Carbon group for testing read share permissions.'
 
     function Assert-ShareCreated
     {
@@ -58,7 +53,7 @@ BeforeAll {
 
         (Test-CSmbShare -Name $Name) | Should -BeTrue
 
-        $share = Get-CFileShare -Name $Name
+        $share = Get-SmbShare -Name $Name
         $share | Should -Not -BeNullOrEmpty
 
         $share.Description | Should -Be $Description
@@ -67,29 +62,45 @@ BeforeAll {
         function Assert-ShareRight
         {
             param(
-                $IdentityName,
-                $ExpectedRigths
+                [String[]] $PrincipalName,
+
+                [ValidateSet('Full', 'Change', 'Read')]
+                [String] $ExpectedRights
             )
 
-            if( $IdentityName )
+            if ($PrincipalName)
             {
-                foreach( $idName in $IdentityName )
+                foreach( $_principalName in $PrincipalName )
                 {
-                    $perm = Get-CFileSharePermission -Name $Name -Identity $idName
-                    $perm | Should -Not -BeNullOrEmpty
-                    $ExpectedRigths | Should -Be $perm.ShareRights
+                    $_principalName = Resolve-TCPrincipalName -Name $_principalName
+                    $because = "expected ${_principalName} to have ${ExpectedRights} access, but they did not."
+                    Get-SmbShareAccess -Name $Name |
+                        Where-Object 'AccountName' -EQ $_principalName |
+                        Where-Object 'AccessRight' -EQ $ExpectedRights |
+                        Should -Not -BeNullOrEmpty -Because $because
                 }
             }
             else
             {
-                (Get-CFileSharePermission -Name $Name | Where-Object { $_.ShareRights -eq $ExpectedRigths }) |
+                Get-SmbShareAccess -Name $Name |
+                    Where-Object 'AccessControlType' -EQ 'Allow' |
+                    Where-Object 'AccessRight' -EQ $ExpectedRights |
                     Should -BeNullOrEmpty
             }
+
+            # Sanity check for the behavior of Revoke-SmbShareAccess. In testing, Everyone gets read access by default.
+            # Install-CSmbShare removes that ACL, which Get-SmbShareAccess returns as a deny rule, even though the
+            # security descriptor does not have a deny rule for Everyone. Make sure that Revoke-SmbShareAccess actually
+            # removes ACEs instead of just changing them to deny. Except for Everyone.
+            Get-SmbShareAccess -Name $Name |
+                Where-Object 'AccessControlType' -EQ 'Deny' |
+                Where-Object 'AccountName' -NE 'Everyone' |
+                Should -BeNullOrEmpty
         }
 
-        Assert-ShareRight $FullAccess ([Carbon.Security.ShareRights]::FullControl)
-        Assert-ShareRight $ChangeAccess ([Carbon.Security.ShareRights]::Change)
-        Assert-ShareRight $ReadAccess ([Carbon.Security.ShareRights]::Read)
+        Assert-ShareRight $FullAccess Full
+        Assert-ShareRight $ChangeAccess Change
+        Assert-ShareRight $ReadAccess Read
     }
 
     function Remove-Share
@@ -111,7 +122,7 @@ BeforeAll {
                            -Description $Remarks `
                            -FullAccess $FullAccess `
                            -ChangeAccess $ChangeAccess `
-                           -ReadAccess $ReadAccess
+                           -ReadAccess $ReadAccess | Should -BeNullOrEmpty
         Assert-ShareCreated
     }
 
@@ -121,13 +132,13 @@ BeforeAll {
         param(
         )
 
-        Get-CFileShare -Name $script:ShareName -AsWmiObject -ErrorAction $ErrorActionPreference
+        Get-SmbShare -Name $script:ShareName -ErrorAction $ErrorActionPreference
     }
 
 }
 
 AfterAll {
-    Get-CFileShare -Name "$($script:baseShareName)*" | Uninstall-CSmbShare
+    Get-SmbShare -Name "$($script:baseShareName)*" | Uninstall-CSmbShare
 }
 
 Describe 'Install-CSmbShare' {
@@ -143,7 +154,7 @@ Describe 'Install-CSmbShare' {
 
     It 'should create share' {
         Invoke-NewShare
-        Assert-Share -ReadAccess 'EVERYONE'
+        Assert-Share
     }
 
     It 'should grant permissions' {
@@ -156,19 +167,22 @@ Describe 'Install-CSmbShare' {
         $details | Should -BeLike "*Remark            *"
     }
 
-    It 'should grant permissions twice' {
+    It 'does not grant permissions twice' {
         $script:fullAccessGroup | Should -BeLike '* *'
+        Invoke-NewShare -FullAccess $script:fullAccessGroup `
+                        -ChangeAccess $script:changeAccessGroup `
+                        -ReadAccess $script:readAccessGroup
+        Mock -CommandName 'Grant-SmbShareAccess' -ModuleName 'Carbon.SmbShare'
         Invoke-NewShare -FullAccess $script:fullAccessGroup -ChangeAccess $script:changeAccessGroup -ReadAccess $script:readAccessGroup
-        Invoke-NewShare -FullAccess $script:fullAccessGroup -ChangeAccess $script:changeAccessGroup -ReadAccess $script:readAccessGroup
-        $details = (net share $script:ShareName) -join ([Environment]::NewLine)
-        $details | Should -BeLike ("*{0}, FULL*" -f $script:fullAccessGroup)
-        $details | Should -BeLike ("*{0}, CHANGE*" -f $script:changeAccessGroup)
-        $details | Should -BeLike ("*{0}, READ*" -f $script:readAccessGroup)
-        $details | Should -BeLike "*Remark            *"
+        Should -Not -Invoke 'Grant-SmbShareAccess' -ModuleName 'Carbon.SmbShare'
     }
 
     It 'should grant multiple full access permissions' {
-        Install-SmbShare -Name $shareName -Path $PSScriptRoot -Description $script:Remarks -FullAccess $script:fullAccessGroup,$script:changeAccessGroup,$script:readAccessGroup
+        Install-CSmbShare -Name $shareName `
+                           -Path $PSScriptRoot `
+                           -Description $script:Remarks `
+                           -FullAccess $script:fullAccessGroup,$script:changeAccessGroup,$script:readAccessGroup |
+            Should -BeNullOrEmpty
         $details = (net share $script:ShareName) -join ([Environment]::NewLine)
         $details | Should -BeLike ("*{0}, FULL*" -f $script:fullAccessGroup)
         $details | Should -BeLike ("*{0}, FULL*" -f $script:changeAccessGroup)
@@ -177,7 +191,11 @@ Describe 'Install-CSmbShare' {
     }
 
     It 'should grant multiple change access permissions' {
-        Install-SmbShare -Name $shareName -Path $PSScriptRoot -Description $script:Remarks -ChangeAccess $script:fullAccessGroup,$script:changeAccessGroup,$script:readAccessGroup
+        Install-CSmbShare -Name $shareName `
+                           -Path $PSScriptRoot `
+                           -Description $script:Remarks `
+                           -ChangeAccess $script:fullAccessGroup,$script:changeAccessGroup,$script:readAccessGroup |
+            Should -BeNullOrEmpty
         $details = (net share $script:ShareName) -join ([Environment]::NewLine)
         $details | Should -BeLike ("*{0}, CHANGE*" -f $script:fullAccessGroup)
         $details | Should -BeLike ("*{0}, CHANGE*" -f $script:changeAccessGroup)
@@ -186,7 +204,11 @@ Describe 'Install-CSmbShare' {
     }
 
     It 'should grant multiple full access permissions' {
-        Install-SmbShare -Name $shareName -Path $PSScriptRoot -Description $script:Remarks -ReadAccess $script:fullAccessGroup,$script:changeAccessGroup,$script:readAccessGroup
+        Install-CSmbShare -Name $shareName `
+                           -Path $PSScriptRoot `
+                           -Description $script:Remarks `
+                           -ReadAccess $script:fullAccessGroup,$script:changeAccessGroup,$script:readAccessGroup |
+            Should -BeNullOrEmpty
         $details = (net share $script:ShareName) -join ([Environment]::NewLine)
         $details | Should -BeLike ("*{0}, READ*" -f $script:fullAccessGroup)
         $details | Should -BeLike ("*{0}, READ*" -f $script:changeAccessGroup)
@@ -203,13 +225,13 @@ Describe 'Install-CSmbShare' {
     }
 
     It 'should handle path with trailing slash' {
-        Install-SmbShare $script:ShareName -Path "$PSScriptRoot\"
+        Install-CSmbShare $script:ShareName -Path "$PSScriptRoot\" | Should -BeNullOrEmpty
 
         Assert-ShareCreated
     }
 
     It 'should create share directory' {
-        $tempDir = New-CTempDirectory -Prefix 'Carbon_Test-InstallSmbShare'
+        $tempDir = New-TCTempDirectory -Prefix 'Carbon_Test-InstallSmbShare'
         $shareDir = Join-Path -Path $tempDir -ChildPath 'Grandparent\Parent\Child'
         $shareDir | Should -Not -Exist
         Invoke-NewShare -Path $shareDir
@@ -218,14 +240,14 @@ Describe 'Install-CSmbShare' {
     }
 
     It 'should update path' {
-        $tempDir = New-CTempDirectory -Prefix $PSCommandPath
+        $tempDir = New-TCTempDirectory -Prefix $PSCommandPath
         try
         {
-            Install-CSmbShare -Name $script:ShareName -Path $script:SharePath
-            Assert-Share -ReadAccess 'Everyone'
+            Install-CSmbShare -Name $script:ShareName -Path $script:SharePath | Should -BeNullOrEmpty
+            Assert-Share
 
-            Install-CSmbShare -Name $script:ShareName -Path $tempDir
-            Assert-Share -Path $tempDir.FullName -ReadAccess 'Everyone'
+            Install-CSmbShare -Name $script:ShareName -Path $tempDir | Should -BeNullOrEmpty
+            Assert-Share -Path $tempDir.FullName
         }
         finally
         {
@@ -234,56 +256,85 @@ Describe 'Install-CSmbShare' {
     }
 
     It 'should update description' {
-        Install-CSmbShare -Name $script:ShareName -Path $script:SharePath -Description 'first'
-        Assert-Share -ReadAccess 'Everyone' -Description 'first'
+        Install-CSmbShare -Name $script:ShareName -Path $script:SharePath -Description 'first' | Should -BeNullOrEmpty
+        Assert-Share -Description 'first'
 
-        Install-CSmbShare -Name $script:ShareName -Path $script:SharePath -Description 'second'
-        Assert-Share -ReadAccess 'everyone' -Description 'second'
+        Install-CSmbShare -Name $script:ShareName -Path $script:SharePath -Description 'second' | Should -BeNullOrEmpty
+        Assert-Share -Description 'second'
     }
 
     It 'should add new permissions to existing share' {
-        Install-CSmbShare -Name $script:ShareName -Path $script:SharePath
-        Assert-Share -ReadAccess 'Everyone'
+        Install-CSmbShare -Name $script:ShareName -Path $script:SharePath | Should -BeNullOrEmpty
+        Assert-Share
 
-        Install-CSmbShare -Name $script:ShareName -Path $script:SharePath -FullAccess $script:fullAccessGroup -ChangeAccess $script:changeAccessGroup -ReadAccess $script:readAccessGroup
-        Assert-Share -FullAccess $script:fullAccessGroup -ChangeAccess $script:changeAccessGroup -ReadAccess $script:readAccessGroup
+        Install-CSmbShare -Name $script:ShareName `
+                           -Path $script:SharePath `
+                           -FullAccess $script:fullAccessGroup `
+                           -ChangeAccess $script:changeAccessGroup `
+                           -ReadAccess $script:readAccessGroup |
+            Should -BeNullOrEmpty
+        Assert-Share -FullAccess $script:fullAccessGroup `
+                     -ChangeAccess $script:changeAccessGroup `
+                     -ReadAccess $script:readAccessGroup
     }
 
     It 'should remove existing permissions' {
-        Install-CSmbShare -Name $script:ShareName -Path $script:SharePath -FullAccess $script:fullAccessGroup
+        Install-CSmbShare -Name $script:ShareName -Path $script:SharePath -FullAccess $script:fullAccessGroup |
+            Should -BeNullOrEmpty
         Assert-Share -FullAccess $script:fullAccessGroup
 
-        Install-CSmbShare -Name $script:ShareName -Path $script:SharePath
-        Assert-Share -ReadAccess 'Everyone'
+        Install-CSmbShare -Name $script:ShareName -Path $script:SharePath | Should -BeNullOrEmpty
+        Assert-Share
     }
 
     It 'should update existing permissions' {
-        Install-CSmbShare -Name $script:ShareName -Path $script:SharePath -FullAccess $script:changeAccessGroup
+        Install-CSmbShare -Name $script:ShareName -Path $script:SharePath -FullAccess $script:changeAccessGroup |
+            Should -BeNullOrEmpty
         Assert-Share -FullAccess $script:changeAccessGroup
 
-        Install-CSmbShare -Name $script:ShareName -Path $script:SharePath -ChangeAccess $script:changeAccessGroup
+        Install-CSmbShare -Name $script:ShareName -Path $script:SharePath -ChangeAccess $script:changeAccessGroup |
+            Should -BeNullOrEmpty
         Assert-Share -ChangeAccess $script:changeAccessGroup
-    }
-
-    It 'should delete file share if forced' {
-        $output = Install-CSmbShare -Name $script:ShareName -Path $script:SharePath
-        $output | Should -BeNullOrEmpty
-
-        $share = Get-CFileShare -Name $script:ShareName -AsWmiObject
-        $share.SetShareInfo(1, $share.Description, $null)
-
-        $output = Install-CSmbShare -Name $script:ShareName -Path $script:SharePath -Force
-        $output | Should -BeNullOrEmpty
-
-        $share = Get-CFileShare -Name $script:ShareName
-        $share.MaximumAllowed | Should -Not -Be 1
     }
 
     It 'should share drive' {
         $drive = Split-Path -Qualifier -Path $PSScriptRoot
-        $result = Install-CSmbShare -Name $script:ShareName -Path $drive
-        $result | Should -BeNullOrEmpty
+        Install-CSmbShare -Name $script:ShareName -Path $drive | Should -BeNullOrEmpty
         $Global:Error | Should -BeNullOrEmpty
         Assert-ShareCreated
+    }
+
+    It 'supports WhatIf when creating share' {
+        Install-CSmbShare -Name $script:ShareName -Path $script:SharePath -WhatIf | Should -BeNullOrEmpty
+        Test-CSmbShare -Name $script:ShareName | Should -BeFalse
+    }
+
+    It 'supports WhatIf when updating share' {
+        Install-CSmbShare -Name $script:ShareName -Path $script:SharePath -ReadAccess 'Everyone' |
+            Should -BeNullOrEmpty
+        Test-CSmbShare -Name $script:ShareName | Should -BeTrue
+
+        # Update description
+        Install-CSmbShare -Name $script:ShareName `
+                           -Path $script:SharePath `
+                           -Description 'new description' `
+                           -ReadAccess 'Everyone' `
+                           -WhatIf |
+            Should -BeNullOrEmpty
+        $share = Get-SmbShare -Name $script:ShareName
+        $share.Description | Should -Not -Be 'new description'
+
+        # Update permissions
+        Install-CSmbShare -Name $script:ShareName `
+                           -Path $script:SharePath `
+                           -FullAccess $script:fullAccessGroup `
+                           -ChangeAccess $script:changeAccessGroup `
+                           -ReadAccess $script:readAccessGroup `
+                           -WhatIf |
+            Should -BeNullOrEmpty
+        $access = Get-SmbShareAccess -Name $script:ShareName
+        $access | Should -HaveCount 1
+        $access[0].AccountName | Should -Be 'Everyone'
+        $access[0].AccessRight | Should -Be 'Read'
     }
 }

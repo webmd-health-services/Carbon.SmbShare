@@ -1,30 +1,11 @@
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#     http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
 
 #Requires -Version 5.1
 Set-StrictMode -Version 'Latest'
 
-if (-not (Get-Command -Name 'Get-WmiObject' -ErrorAction Ignore))
-{
-    $msgs = 'Get-CFileShare tests will not be run because because the Get-WmiObject command does not exist, which is ' +
-            'needed to install a test share.'
-    Write-Warning $msgs
-    return
-}
-
 BeforeAll {
     Set-StrictMode -Version 'Latest'
 
-    & (Join-Path -Path $PSScriptRoot -ChildPath 'Initialize-CarbonTest.ps1' -Resolve)
+    Import-Module -Name (Join-Path -Path $PSScriptRoot -ChildPath '..\Carbon.SmbShare' -Resolve) -Verbose:$false
 
     $script:shareName = $null
     $script:sharePath = $null
@@ -43,7 +24,7 @@ Describe 'Uninstall-CSmbShare' {
     }
 
     AfterEach {
-        Get-CFileShare -Name $script:shareName -ErrorAction Ignore | Uninstall-CSmbShare
+        Get-SmbShare -Name $script:shareName -ErrorAction Ignore | Uninstall-CSmbShare
     }
 
     It 'should delete share' {

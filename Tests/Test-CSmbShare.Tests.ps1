@@ -1,41 +1,27 @@
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#     http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
 
 #Requires -Version 5.1
 Set-StrictMode -Version 'Latest'
 
-if (-not (Get-Command -Name 'Get-WmiObject' -ErrorAction Ignore))
-{
-    $msgs = 'Get-CFileShare tests will not be run because because the Get-WmiObject command does not exist, which is ' +
-            'needed to install a test share.'
-    Write-Warning $msgs
-    return
-}
-
 BeforeAll {
     Set-StrictMode -Version 'Latest'
 
-    & (Join-Path -Path $PSScriptRoot -ChildPath 'Initialize-CarbonTest.ps1' -Resolve)
+    Import-Module -Name (Join-Path -Path $PSScriptRoot -ChildPath '..\Carbon.SmbShare' -Resolve) -Verbose:$false
+    Import-Module -Name (Join-Path -Path $PSScriptRoot -ChildPath '..\Carbon.SmbShare\M\Carbon.FileSystem' -Resolve) `
+                  -Function @('New-CTempDirectory', 'Uninstall-CDirectory') `
+                  -PRefix 'T' `
+                  -Verbose:$false
+
     $script:shareName = 'CarbonTestSmbShare'
     $script:sharePath = $null
-    $script:shareDescription = 'Share for testing Carbon''s Get-FileShare function.'
+    $script:shareDescription = 'Share for testing Carbon''s Test-CSmbShare function.'
 
-    $script:sharePath = New-CTempDirectory -Prefix $PSCommandPath
+    $script:sharePath = New-TCTempDirectory -Prefix $PSCommandPath
     Install-CSmbShare -Path $script:sharePath -Name $script:shareName -Description $script:shareDescription
 }
 
 AfterAll {
     Uninstall-CSmbShare -Name $script:shareName
-    Uninstall-CDirectory -Path $script:sharePath
+    Uninstall-TCDirectory -Path $script:sharePath
 }
 
 Describe 'Test-CSmbShare' {
@@ -44,7 +30,7 @@ Describe 'Test-CSmbShare' {
     }
 
     It 'should test share' {
-        $shares = Get-CFileShare
+        $shares = Get-SmbShare
         $shares | Should -Not -BeNullOrEmpty
         $sharesNotFound = $shares | Where-Object { -not (Test-CSmbShare -Name $_.Name) }
         $sharesNotFound | Should -BeNullOrEmpty

@@ -3,27 +3,22 @@ function Install-CSmbShare
 {
     <#
     .SYNOPSIS
-    Installs a file/SMB share.
+    Installs an SMB file share.
 
     .DESCRIPTION
-    The `Install-CSmbShare` function installs a new file/SMB share. If the share doesn't exist, it is created. In
-    Carbon 2.0, if a share does exist, its properties and permissions are updated in place, unless the share's path
-    needs to change. Changing a share's path requires deleting and re-creating. Before Carbon 2.0, shares were always
-    deleted and re-created.
+    The `Install-CSmbShare` function installs an SMB file share. If the share doesn't exist, it is created. If a share
+    exists, its description and permissions are updated in place. If its path is changing, the share is deleted and
+    re-created. If the path to the share doesn't exist, it is created.
 
-    Use the `FullAccess`, `ChangeAccess`, and `ReadAccess` parameters to grant full, change, and read sharing
-    permissions on the share. Each parameter takes a list of user/group names. If you don't supply any permissions,
-    `Everyone` will get `Read` access. Permissions on existing shares are cleared before permissions are granted.
+    Use the `FullAccess`, `ChangeAccess`, and `ReadAccess` parameters to grant full, change, and read permissions on the
+    share. Each parameter takes a list of user/group names. Only the users and groups in the `FullAccess`,
+    `ChangeAccess`, and `ReadAccess` parameters will be given access. Any accounts that have access that aren't in one
+    of the specified lists will have their permissions removed, including the default `Everyone` read access rule. Make
+    sure to pass `Everyone` to the `ReadAccess` parameter if you want everyone to have access!
+
     Permissions don't apply to the file system, only to the share. Use the Carbon.FileSystem module's
-    `Grant-CNtfsPermission` function to grant file system permissions.
-
-    Before Carbon 2.0, this function was called `Install-SmbShare`.
-
-    .LINK
-    Get-CFileShare
-
-    .LINK
-    Get-CFileSharePermission
+    `Grant-CNtfsPermission` function to grant file system permissions or use the
+    [SmbShare](https://learn.microsoft.com/en-us/powershell/module/smbshare/) module's `Set-SmbPathAcl`.
 
     .LINK
     Test-CSmbShare
@@ -32,239 +27,225 @@ function Install-CSmbShare
     Uninstall-CSmbShare
 
     .EXAMPLE
-    Install-Share -Name TopSecretDocuments -Path C:\TopSecret -Description 'Share for our top secret documents.' -ReadAccess "Everyone" -FullAccess "Analysts"
+    Install-CSmbShare -Name TopSecretDocuments -Path C:\TopSecret -Description 'Share for our top secret documents.' -ReadAccess "Everyone" -FullAccess "Analysts"
 
     Shares the C:\TopSecret directory as `TopSecretDocuments` and grants `Everyone` read access and `Analysts` full
     control.
     #>
-    [CmdletBinding()]
+    [CmdletBinding(SupportsShouldProcess)]
     param(
         # The share's name.
         [Parameter(Mandatory)]
         [String] $Name,
 
-        # The path to the share.
+        # The path to the share. Is created if it doesn't exist.
         [Parameter(Mandatory)]
         [String] $Path,
 
-        # A description of the share
+        # A description of the share.
         [String] $Description = '',
 
-        # The identities who have full access to the share.
+        # The user/group names who should be granted full access to the share. Only principals in this list will be
+        # given full access. All other principals will be removed.
         [String[]] $FullAccess = @(),
 
-        # The identities who have change access to the share.
+        # The user/group names who should be granted change access to the share. Only principals in this list will be
+        # given change access. All other principals will be removed.
         [String[]] $ChangeAccess = @(),
 
-        # The identities who have read access to the share
-        [String[]] $ReadAccess = @(),
-
-        # Deletes the share and re-creates it, if it exists. Preserves default beheavior in Carbon before 2.0.
+        # The user/group names who should be granted read access to the share. Only principals in this list will be
+        # given read access. All other principals will be removed.
         #
-        # The `Force` switch is new in Carbon 2.0.
-        [switch] $Force
+        # The `Everyone` group will *not* be granted permission by default. They must be in this list to be given
+        # access.
+        [String[]] $ReadAccess = @()
     )
 
     Set-StrictMode -Version 'Latest'
     Use-CallerPreference -Cmdlet $PSCmdlet -Session $ExecutionContext.SessionState
 
-    if (-not (Get-Command -Name 'Get-WmiObject' -ErrorAction Ignore))
+    if ([wildcardpattern]::ContainsWildcardCharacters($Name))
     {
-        # No. Seriously. The CIM cmdlets have no way of creating Win32_SecurityDescriptor
-        $msg = "$($PSCmdlet.MyInvocation.MyCommand.Name) is not supported because the Get-WmiObject cmdlet does not " +
-               'exist.'
+        $msg = "Failed to create SMB file share ""${Name}"" because the share name contains wildcard characters."
         Write-Error -Message $msg -ErrorAction $ErrorActionPreference
         return
     }
 
-    function New-ShareAce
+    $shareInfoWrittenTo = @{}
+
+    function Write-Message
     {
         param(
-            # The identity
-            [Parameter(Mandatory)]
-            [AllowEmptyCollection()]
-            [String[]] $Identity,
-
-            # The rights to grant to Identity.
-            [Carbon.Security.ShareRights] $ShareRight
+            [String] $Message,
+            [switch] $Verbose
         )
 
-        Set-StrictMode -Version 'Latest'
-
-        foreach( $identityName in $Identity )
+        $writeCmd = 'Write-Information'
+        if ($Verbose)
         {
-            $trustee = ([wmiclass]'Win32_Trustee').CreateInstance()
-            [Security.Principal.SecurityIdentifier]$sid =
-                Resolve-CIdentity -Name $identityName -NoWarn | Select-Object -ExpandProperty 'Sid'
-            if( -not $sid )
-            {
-                continue
-            }
-
-            $sidBytes = New-Object 'byte[]' $sid.BinaryLength
-            $sid.GetBinaryForm( $sidBytes, 0)
-
-            $trustee.Sid = $sidBytes
-
-            $ace = ([wmiclass]'Win32_Ace').CreateInstance()
-            $ace.AccessMask = $ShareRight
-            $ace.AceFlags = 0
-            $ace.AceType = 0
-            $ace.Trustee = $trustee
-
-            $ace
+            $writeCmd = 'Write-Verbose'
         }
+
+        if (-not $shareInfoWrittenTo.ContainsKey($writeCmd))
+        {
+            & $writeCmd "SMB File Share ${Name}"
+            $shareInfoWrittenTo[$writeCmd] = $true
+        }
+
+        & $writeCmd "               ${Message}"
     }
 
-    $Path = Resolve-CFullPath -Path $Path -NoWarn
-    $Path = $Path.Trim('\\')
-    # When sharing drives, path must end with \. Otherwise, it shouldn't.
-    if( $Path -eq (Split-Path -Qualifier -Path $Path ) )
+    function Format-AccessRight
     {
-        $Path = Join-Path -Path $Path -ChildPath '\'
-    }
+        param(
+            [Parameter(Mandatory, ValueFromPipeline)]
+            [ValidateSet('Full', 'Change', 'Read')]
+            [String] $InputObject
+        )
 
-    $changeMsgPrefix = "  "
-    $changeMsgs = [Collections.Generic.List[String]]::New()
-    $action = 'Creating'
-
-    if( (Test-CSmbShare -Name $Name) )
-    {
-        $share = Get-CFileShare -Name $Name
-        [bool]$delete = $false
-
-        if( $Force )
+        process
         {
-            $delete = $true
-        }
-
-        if ($share.Path -ne $Path)
-        {
-            $action = 'Updating'
-            $delete = $true
-        }
-
-        if( $delete )
-        {
-            Uninstall-CSmbShare -Name $Name -InformationAction SilentlyContinue
+            return '{0,-6}' -f $InputObject
         }
     }
 
-    $createdShare = $false
-    if (-not (Test-CSmbShare -Name $Name))
+    # Make sure path ends with \. You can only share directories, after all.
+    $Path = Join-Path -Path $Path -ChildPath '\'
+
+    if (-not (Test-Path -Path $Path))
     {
         Install-CDirectory -Path $Path
-
-        Write-Information -Message "$($action) SMB file share ""$($Name)""."
-        if ($action -eq 'Creating')
-        {
-            Write-Information "$($changeMsgPrefix)Path         $($Path)"
-            if ($Description)
-            {
-                Write-Information "$($changeMsgPrefix)Description  $($Description)"
-            }
-        }
-        elseif ($action -eq 'Updating' -and $share.Path -ne $Path)
-        {
-            WRite-Information "$($changeMsgPrefix)Path         $($share.Path) -> $($Path)"
-        }
-
-        $createArgs = [ordered]@{
-            Path = [String]$Path;
-            Name = [String]$Name;
-            Type = [UInt32]0;
-            MaximumAllowed = $null;
-            Description = $Description;
-        }
-        Invoke-CCimMethod -ClassName 'Win32_Share' -Name 'Create' -Arguments $createArgs
-        $createdShare = $true
     }
 
-    $share = Get-CFileShare -Name $Name -AsWmiObject
-    $updateShare = $false
+    $share = Test-CSmbShare -Name $Name -PassThru
+
+    # Only way to update a share's path is to delete and re-create the share.
+    if ($share -and (Join-Path -Path $share.Path -ChildPath '\') -ne $Path)
+    {
+        Uninstall-CSmbShare -Name $Name
+        $share = $null
+    }
+
+    $whatIfTarget = "SMB file share '${Name}'"
+
+    # If no permissions were specified, grant read access to everyone.
+    if (-not $share)
+    {
+        if (-not $PSCmdlet.ShouldProcess($whatIfTarget, "create"))
+        {
+            return
+        }
+
+        Write-Message "created at ""${Path}""."
+        foreach ($principal in $FullAccess)
+        {
+            Write-Message "+ $('Full' | Format-AccessRight)  ${principal}"
+        }
+
+        foreach ($principal in $ChangeAccess)
+        {
+            Write-Message "+ $('Change' | Format-AccessRight)  ${principal}"
+        }
+
+        foreach ($principal in $ReadAccess)
+        {
+            Write-Message "+ $('Read' | Format-AccessRight)  ${principal}"
+        }
+
+        $newSmbShareArgs = @{}
+        if ($FullAccess)
+        {
+            $newSmbShareArgs['FullAccess'] = $FullAccess
+        }
+        if ($ChangeAccess)
+        {
+            $newSmbShareArgs['ChangeAccess'] = $ChangeAccess
+        }
+        if ($ReadAccess)
+        {
+            $newSmbShareArgs['ReadAccess'] = $ReadAccess
+        }
+
+        $share = New-SmbShare -Name $Name -Path $Path -Description $Description @newSmbShareArgs
+        if (-not $share)
+        {
+            return
+        }
+    }
+
+    $Name = $share.Name
 
     if ($share.Description -ne $Description)
     {
-        $changeMsgs.Add("$($changeMsgPrefix)Description  $($share.Description) -> $($Description)")
-        $updateShare = $true
+        Write-Message  "Description  - $($share.Description)"
+        Write-Message  "             + ${Description}"
+        if ($PSCmdlet.ShouldProcess($whatIfTarget, "update description"))
+        {
+            Set-SmbShare -Name $Name -Description $Description -Force | Out-Null
+        }
     }
 
-    $shareAces = Invoke-Command -ScriptBlock {
-            if (-not $FullAccess -and -not $ChangeAccess -and -not $ReadAccess)
+    # Resolve all the principals.
+    $FullAccess = $FullAccess | ForEach-Object { Resolve-CPrincipalName -Name $_ }
+    $ChangeAccess = $ChangeAccess | ForEach-Object { Resolve-CPrincipalName -Name $_ }
+    $ReadAccess = $ReadAccess | ForEach-Object { Resolve-CPrincipalName -Name $_ }
+
+    $aces = Get-SmbShareAccess -Name $Name | Where-Object 'AccessControlType' -eq 'Allow'
+
+    # Remove extra permissions.
+    foreach ($ace in $aces)
+    {
+        $acePrincipalName = Resolve-CPrincipalName -Name $ace.AccountName
+        $ace | Add-Member -MemberType NoteProperty -Name 'PrincipalName' -Value $acePrincipalName -Force
+        if (-not $acePrincipalName)
+        {
+            $acePrincipalName = $ace.AccountName
+        }
+
+        if (-not $acePrincipalName -or `
+            ($ace.AccessRight -eq 'Read' -and $ReadAccess -notcontains $acePrincipalName) -or `
+            ($ace.AccessRight -eq 'Change' -and $ChangeAccess -notcontains $acePrincipalName) -or `
+            ($ace.AccessRight -eq 'Full' -and $FullAccess -notcontains $acePrincipalName))
+        {
+            if (-not $acePrincipalName)
             {
-                return New-ShareAce -Identity 'Everyone' -ShareRight Read
+                $acePrincipalName = $ace.AccountName
             }
 
-            New-ShareAce -Identity $FullAccess -ShareRight FullControl
-            New-ShareAce -Identity $ChangeAccess -ShareRight Change
-            New-ShareAce -Identity $ReadAccess -ShareRight Read
-        }
-
-    # Check if the share is missing any of the new ACEs.
-    foreach ($ace in $shareAces)
-    {
-        $identityName = Resolve-CIdentityName -SID $ace.Trustee.SID -NoWarn
-        $accessMsgPrefix = "$($changeMsgPrefix)Access       $($identityName)  "
-        $permission = Get-CFileSharePermission -Name $Name -Identity $identityName
-
-        $newPerm = [Carbon.Security.ShareRights]$ace.AccessMask
-        if (-not $permission)
-        {
-            $changeMsgs.Add("$($accessMsgPrefix)+ $($newPerm)")
-            $updateShare = $true
-        }
-        elseif ([int]$permission.ShareRights -ne $ace.AccessMask)
-        {
-            $changeMsgs.Add("$($accessMsgPrefix)  $($permission.ShareRights) -> $($newPerm)")
-            $updateShare = $true
+            if ($PSCmdlet.ShouldProcess($whatIfTarget, "revoke '$($ace.AccountName)' $($ace.AccessRight) access"))
+            {
+                Write-Message  "- $($ace.AccessRight | Format-AccessRight)  ${acePrincipalName}"
+                Revoke-SmbShareAccess -Name $Name -AccountName $ace.AccountName -Force | Out-Null
+            }
         }
     }
 
-    $existingAces = Get-CFileSharePermission -Name $Name
-    foreach ($ace in $existingAces)
+    function Grant-Access
     {
-        $identityName = $ace.IdentityReference.Value
+        param(
+            [String[]] $PrincipalName,
 
-        $existingAce = $ace
-        if ($shareAces)
-        {
-            $existingAce =
-                $shareAces |
-                Where-Object {
-                        $newIdentityName = Resolve-CIdentityName -SID $_.Trustee.SID -NoWarn
-                        return ( $newIdentityName -eq $ace.IdentityReference.Value )
-                    }
-        }
+            [ValidateSet('Full', 'Change', 'Read')]
+            [String] $AccessRight
+        )
 
-        if (-not $existingAce)
+        foreach ($_principalName in $PrincipalName)
         {
-            $changeMsgs.Add("$($changeMsgPrefix)Access       $($identityName)  - $($ace.ShareRights)")
-            $updateShare = $true
+            if ($aces | Where-Object 'PrincipalName' -EQ $_principalName | Where-Object 'AccessRight' -EQ $AccessRight)
+            {
+                Write-Message "${_principalName}    ${AccessRight}" -Verbose
+                continue
+            }
+
+            if ($PSCmdlet.ShouldProcess($whatIfTarget, "grant '$($_principalName)' ${AccessRight} access"))
+            {
+                Write-Message  "+ $($AccessRight | Format-AccessRight)  ${_principalName}"
+                Grant-SmbShareAccess -Name $Name -AccountName $_principalName -AccessRight $AccessRight -Force | Out-Null
+            }
         }
     }
 
-    if ($updateShare)
-    {
-        $currentSD = Get-CFileShareSecurityDescriptor -Name $Name
-        $newSD = ([wmiclass]'Win32_SecurityDescriptor').CreateInstance()
-        $newSD.DACL = $shareAces
-        $newSD.ControlFlags = "0x4"
-        $newSD.Group = $currentSD.Group
-        $newSD.Owner = $currentSD.Owner
-        $newSD.SACL = $currentSD.SACL
-
-        if (-not $createdShare)
-        {
-            Write-Information -Message "Updating SMB file share ""$($Name)""."
-        }
-        foreach ($msg in $changeMsgs)
-        {
-            Write-Information $msg
-        }
-
-        $result = $share.SetShareInfo($share.MaximumAllowed, $Description, $newSD)
-        Write-CCimError -Message "Failed to update ""$($Name)"" SMB file share" -Result $result
-    }
+    Grant-Access -PrincipalName $FullAccess -AccessRight 'Full'
+    Grant-Access -PrincipalName $ChangeAccess -AccessRight 'Change'
+    Grant-Access -PrincipalName $ReadAccess -AccessRight 'Read'
 }
-
-Set-Alias -Name 'Install-SmbShare' -Value 'Install-CSmbShare'

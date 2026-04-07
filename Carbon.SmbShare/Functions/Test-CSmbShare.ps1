@@ -3,18 +3,14 @@ function Test-CSmbShare
 {
     <#
     .SYNOPSIS
-    Tests if a file/SMB share exists on the local computer.
+    Tests if an SMB file share exists on the local computer.
 
     .DESCRIPTION
-    The `Test-CSmbShare` function uses WMI to check if a file share exists on the local computer. If the share exists, `Test-CSmbShare` returns `$true`. Otherwise, it returns `$false`.
+    The `Test-CSmbShare` function uses `Get-SmbShare` from PowerShell's built-in SmbShare module to check if a file
+    share exists on the local computer. If the share exists, `Test-CSmbShare` returns `$true`. Otherwise, it returns
+    `$false`.
 
-    `Test-CSmbShare` was added in Carbon 2.0.
-
-    .LINK
-    Get-CFileShare
-
-    .LINK
-    Get-CFileSharePermission
+    Use the `-PassThru` switch to return the share object if it exists.
 
     .LINK
     Install-CSmbShare
@@ -29,19 +25,29 @@ function Test-CSmbShare
     #>
     [CmdletBinding()]
     param(
-        [Parameter(Mandatory=$true)]
-        [string]
         # The name of a specific share to check.
-        $Name
+        [Parameter(Mandatory)]
+        [String] $Name,
+
+        [switch] $PassThru
     )
 
     Set-StrictMode -Version 'Latest'
-
     Use-CallerPreference -Cmdlet $PSCmdlet -Session $ExecutionContext.SessionState
 
-    $share = Get-CFileShare -Name ('{0}*' -f $Name) |
-                Where-Object { $_.Name -eq $Name }
+    $share = Get-SmbShare -Name $Name -ErrorAction Ignore
 
-    return ($share -ne $null)
+    $shareExists = $null -ne $share
+
+    if ($PassThru)
+    {
+        if ($shareExists)
+        {
+            return $share
+        }
+        return $null
+    }
+
+    return $shareExists
 }
 

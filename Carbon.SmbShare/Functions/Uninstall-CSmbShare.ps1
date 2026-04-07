@@ -6,17 +6,9 @@ function Uninstall-CSmbShare
     Uninstalls/removes a file share from the local computer.
 
     .DESCRIPTION
-    The `Uninstall-CSmbShare` function uses WMI to uninstall/remove a file share from the local computer, if it exists.
-    Pass the name of the share to delete to the `Name` parameter (or pipe the name or share objects to the function). If
-    the file share exists, it is deleted. If it doesn't exist, nothing hapens.
-
-    `Uninstall-CSmbShare` was added in Carbon 2.0.
-
-    .LINK
-    Get-CFileShare
-
-    .LINK
-    Get-CFileSharePermission
+    The `Uninstall-CSmbShare` function uses `Remove-SmbShare` to uninstall/remove a file share from the local computer,
+    if it exists. Pass the name of the share to delete to the `Name` parameter (or pipe the name or share objects to the
+    function). If the file share exists, it is deleted. If it doesn't exist, nothing hapens.
 
     .LINK
     Install-CSmbShare
@@ -32,8 +24,7 @@ function Uninstall-CSmbShare
     #>
     [CmdletBinding(SupportsShouldProcess)]
     param(
-        # The name of a specific share to uninstall/delete. Wildcards accepted. If the string contains WMI sensitive
-        # characters, you'll need to escape them.
+        # The name of a specific share to uninstall/delete. Wildcards accepted.
         [Parameter(Mandatory, ValueFromPipeline, ValueFromPipelineByPropertyName)]
         [String] $Name
     )
@@ -43,29 +34,18 @@ function Uninstall-CSmbShare
         Set-StrictMode -Version 'Latest'
         Use-CallerPreference -Cmdlet $PSCmdlet -Session $ExecutionContext.SessionState
 
-        if( -not (Test-CSmbShare -Name $Name) )
+        $shares = Test-CSmbShare -Name $Name -PassThru
+        if (-not $shares)
         {
             return
         }
 
-        foreach ($share in (Get-CFileShare -Name $Name))
+        foreach ($share in $shares)
         {
-            $deletePhysicalPath = $false
-            if (-not (Test-Path -Path $share.Path -PathType Container))
+            if ($PSCmdlet.ShouldProcess("SMB file share '$($share.Name)'", "remove"))
             {
-                Install-CDirectory -Path $share.Path -InformationAction SilentlyContinue
-                $deletePhysicalPath = $true
-            }
-
-            if( $PSCmdlet.ShouldProcess( "$($share.Name) ($($share.Path))", 'delete SMB file share' ) )
-            {
-                Write-Information "Deleting SMB file share ""$($share.Name)"" ($($share.Path))."
-                $share | Invoke-CCimMethod -Name 'Delete'
-            }
-
-            if ($deletePhysicalPath -and (Test-Path -Path $share.Path))
-            {
-                Uninstall-CDirectory -Path $share.Path -Recurse -InformationAction SilentlyContinue
+                Write-Information "Removing SMB file share ""$($share.Name)"" at ""$($share.Path)""."
+                $share | Remove-SmbShare -Force -ErrorAction $ErrorActionPreference -WhatIf:$WhatIfPreference
             }
         }
     }

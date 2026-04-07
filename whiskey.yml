@@ -1,6 +1,8 @@
 
 Build:
-- PowerShell: prism install | Format-Table -Auto
+- PowerShell: |
+    prism install | Format-Table -Auto
+    prism install -Path .\Carbon.SmbShare | Format-Table -Auto
   .ExceptDuring: Clean
 
 - Version:
