@@ -76,9 +76,9 @@
 
     # Functions to export from this module. Only list public function here.
     FunctionsToExport = @(
-        'Install-CFileShare',
-        'Test-CFileShare',
-        'Uninstall-CFileShare'
+        'Install-CSmbShare',
+        'Test-CSmbShare',
+        'Uninstall-CSmbShare'
     )
 
     # Cmdlets to export from this module. By default, you get a script module, so there are no cmdlets.

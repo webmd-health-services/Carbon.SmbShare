@@ -1,14 +1,14 @@
 
-function Test-CFileShare
+function Test-CSmbShare
 {
     <#
     .SYNOPSIS
     Tests if a file/SMB share exists on the local computer.
 
     .DESCRIPTION
-    The `Test-CFileShare` function uses WMI to check if a file share exists on the local computer. If the share exists, `Test-CFileShare` returns `$true`. Otherwise, it returns `$false`.
+    The `Test-CSmbShare` function uses WMI to check if a file share exists on the local computer. If the share exists, `Test-CSmbShare` returns `$true`. Otherwise, it returns `$false`.
 
-    `Test-CFileShare` was added in Carbon 2.0.
+    `Test-CSmbShare` was added in Carbon 2.0.
 
     .LINK
     Get-CFileShare
@@ -17,13 +17,13 @@ function Test-CFileShare
     Get-CFileSharePermission
 
     .LINK
-    Install-CFileShare
+    Install-CSmbShare
 
     .LINK
-    Uninstall-CFileShare
+    Uninstall-CSmbShare
 
     .EXAMPLE
-    Test-CFileShare -Name 'CarbonShare'
+    Test-CSmbShare -Name 'CarbonShare'
 
     Demonstrates how to test of a file share exists.
     #>

@@ -28,40 +28,40 @@ BeforeAll {
 
     $script:shareName = $null
     $script:sharePath = $null
-    $script:shareDescription = 'Share for testing Carbon''s Uninstall-CFileShare function.'
+    $script:shareDescription = 'Share for testing Carbon''s Uninstall-CSmbShare function.'
 }
 
-Describe 'Uninstall-CFileShare' {
+Describe 'Uninstall-CSmbShare' {
 
     BeforeEach {
 
         $script:sharePath = Get-Item -Path 'TestDrive:'
-        $script:shareName = 'CarbonUninstallFileShare{0}' -f [IO.Path]::GetRandomFileName()
-        Install-CFileShare -Path $script:sharePath -Name $script:shareName -Description $script:shareDescription
-        Test-CFileShare -Name $script:shareName | Should -BeTrue
+        $script:shareName = 'CarbonUninstallSmbShare{0}' -f [IO.Path]::GetRandomFileName()
+        Install-CSmbShare -Path $script:sharePath -Name $script:shareName -Description $script:shareDescription
+        Test-CSmbShare -Name $script:shareName | Should -BeTrue
         $Global:Error.Clear()
     }
 
     AfterEach {
-        Get-CFileShare -Name $script:shareName -ErrorAction Ignore | Uninstall-CFileShare
+        Get-CFileShare -Name $script:shareName -ErrorAction Ignore | Uninstall-CSmbShare
     }
 
     It 'should delete share' {
-        $output = Uninstall-CFileShare -Name $script:shareName
+        $output = Uninstall-CSmbShare -Name $script:shareName
         $output | Should -BeNullOrEmpty
         $Global:Error | Should -BeNullOrEmpty
-        (Test-FileShare -Name $script:shareName) | Should -BeFalse
+        (Test-CSmbShare -Name $script:shareName) | Should -BeFalse
         $script:sharePath | Should -Exist
     }
 
     It 'should support should process' {
-        $output = Uninstall-CFileShare -Name $script:shareName -WhatIf
+        $output = Uninstall-CSmbShare -Name $script:shareName -WhatIf
         $output | Should -BeNullOrEmpty
-        (Test-FileShare -Name $script:shareName) | Should -BeTrue
+        (Test-CSmbShare -Name $script:shareName) | Should -BeTrue
     }
 
     It 'should handle share that does not exist' {
-        $output = Uninstall-CFileShare -Name 'fdsfdsurwoim'
+        $output = Uninstall-CSmbShare -Name 'fdsfdsurwoim'
         $output | Should -BeNullOrEmpty
         $Global:Error | Should -BeNullOrEmpty
     }
@@ -70,7 +70,7 @@ Describe 'Uninstall-CFileShare' {
         Remove-Item -Path $script:sharePath
         try
         {
-            Uninstall-CFileShare -Name $script:shareName
+            Uninstall-CSmbShare -Name $script:shareName
             $Global:Error | Should -BeNullOrEmpty
             $script:sharePath | Should -Not -Exist
         }

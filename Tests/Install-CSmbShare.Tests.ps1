@@ -15,7 +15,7 @@ Set-StrictMode -Version 'Latest'
 
 if (-not (Get-Command -Name 'Get-WmiObject' -ErrorAction Ignore))
 {
-    $msgs = 'Install-CFileShare tests will not be run because because the Get-WmiObject command does not exist.'
+    $msgs = 'Install-CSmbShare tests will not be run because because the Get-WmiObject command does not exist.'
     Write-Warning $msgs
     return
 }
@@ -56,7 +56,7 @@ BeforeAll {
             $ReadAccess
         )
 
-        (Test-CFileShare -Name $Name) | Should -BeTrue
+        (Test-CSmbShare -Name $Name) | Should -BeTrue
 
         $share = Get-CFileShare -Name $Name
         $share | Should -Not -BeNullOrEmpty
@@ -94,7 +94,7 @@ BeforeAll {
 
     function Remove-Share
     {
-        Get-Share -ErrorAction Ignore | Uninstall-CFileShare
+        Get-Share -ErrorAction Ignore | Uninstall-CSmbShare
     }
 
     function Invoke-NewShare
@@ -106,7 +106,7 @@ BeforeAll {
             $ReadAccess = @(),
             $Remarks = ''
         )
-        Install-CFileShare -Name $script:ShareName `
+        Install-CSmbShare -Name $script:ShareName `
                            -Path $Path `
                            -Description $Remarks `
                            -FullAccess $FullAccess `
@@ -127,10 +127,10 @@ BeforeAll {
 }
 
 AfterAll {
-    Get-CFileShare -Name "$($script:baseShareName)*" | Uninstall-CFileShare
+    Get-CFileShare -Name "$($script:baseShareName)*" | Uninstall-CSmbShare
 }
 
-Describe 'Install-CFileShare' {
+Describe 'Install-CSmbShare' {
     BeforeEach {
         $script:shareName = "$($script:baseShareName)$($script:testNum)"
         $Global:Error.Clear()
@@ -221,10 +221,10 @@ Describe 'Install-CFileShare' {
         $tempDir = New-CTempDirectory -Prefix $PSCommandPath
         try
         {
-            Install-CFileShare -Name $script:ShareName -Path $script:SharePath
+            Install-CSmbShare -Name $script:ShareName -Path $script:SharePath
             Assert-Share -ReadAccess 'Everyone'
 
-            Install-CFileShare -Name $script:ShareName -Path $tempDir
+            Install-CSmbShare -Name $script:ShareName -Path $tempDir
             Assert-Share -Path $tempDir.FullName -ReadAccess 'Everyone'
         }
         finally
@@ -234,45 +234,45 @@ Describe 'Install-CFileShare' {
     }
 
     It 'should update description' {
-        Install-CFileShare -Name $script:ShareName -Path $script:SharePath -Description 'first'
+        Install-CSmbShare -Name $script:ShareName -Path $script:SharePath -Description 'first'
         Assert-Share -ReadAccess 'Everyone' -Description 'first'
 
-        Install-CFileShare -Name $script:ShareName -Path $script:SharePath -Description 'second'
+        Install-CSmbShare -Name $script:ShareName -Path $script:SharePath -Description 'second'
         Assert-Share -ReadAccess 'everyone' -Description 'second'
     }
 
     It 'should add new permissions to existing share' {
-        Install-CFileShare -Name $script:ShareName -Path $script:SharePath
+        Install-CSmbShare -Name $script:ShareName -Path $script:SharePath
         Assert-Share -ReadAccess 'Everyone'
 
-        Install-CFileShare -Name $script:ShareName -Path $script:SharePath -FullAccess $script:fullAccessGroup -ChangeAccess $script:changeAccessGroup -ReadAccess $script:readAccessGroup
+        Install-CSmbShare -Name $script:ShareName -Path $script:SharePath -FullAccess $script:fullAccessGroup -ChangeAccess $script:changeAccessGroup -ReadAccess $script:readAccessGroup
         Assert-Share -FullAccess $script:fullAccessGroup -ChangeAccess $script:changeAccessGroup -ReadAccess $script:readAccessGroup
     }
 
     It 'should remove existing permissions' {
-        Install-CFileShare -Name $script:ShareName -Path $script:SharePath -FullAccess $script:fullAccessGroup
+        Install-CSmbShare -Name $script:ShareName -Path $script:SharePath -FullAccess $script:fullAccessGroup
         Assert-Share -FullAccess $script:fullAccessGroup
 
-        Install-CFileShare -Name $script:ShareName -Path $script:SharePath
+        Install-CSmbShare -Name $script:ShareName -Path $script:SharePath
         Assert-Share -ReadAccess 'Everyone'
     }
 
     It 'should update existing permissions' {
-        Install-CFileShare -Name $script:ShareName -Path $script:SharePath -FullAccess $script:changeAccessGroup
+        Install-CSmbShare -Name $script:ShareName -Path $script:SharePath -FullAccess $script:changeAccessGroup
         Assert-Share -FullAccess $script:changeAccessGroup
 
-        Install-CFileShare -Name $script:ShareName -Path $script:SharePath -ChangeAccess $script:changeAccessGroup
+        Install-CSmbShare -Name $script:ShareName -Path $script:SharePath -ChangeAccess $script:changeAccessGroup
         Assert-Share -ChangeAccess $script:changeAccessGroup
     }
 
     It 'should delete file share if forced' {
-        $output = Install-CFileShare -Name $script:ShareName -Path $script:SharePath
+        $output = Install-CSmbShare -Name $script:ShareName -Path $script:SharePath
         $output | Should -BeNullOrEmpty
 
         $share = Get-CFileShare -Name $script:ShareName -AsWmiObject
         $share.SetShareInfo(1, $share.Description, $null)
 
-        $output = Install-CFileShare -Name $script:ShareName -Path $script:SharePath -Force
+        $output = Install-CSmbShare -Name $script:ShareName -Path $script:SharePath -Force
         $output | Should -BeNullOrEmpty
 
         $share = Get-CFileShare -Name $script:ShareName
@@ -281,7 +281,7 @@ Describe 'Install-CFileShare' {
 
     It 'should share drive' {
         $drive = Split-Path -Qualifier -Path $PSScriptRoot
-        $result = Install-CFileShare -Name $script:ShareName -Path $drive
+        $result = Install-CSmbShare -Name $script:ShareName -Path $drive
         $result | Should -BeNullOrEmpty
         $Global:Error | Should -BeNullOrEmpty
         Assert-ShareCreated

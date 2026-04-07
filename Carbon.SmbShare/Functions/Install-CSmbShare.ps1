@@ -1,12 +1,12 @@
 
-function Install-CFileShare
+function Install-CSmbShare
 {
     <#
     .SYNOPSIS
     Installs a file/SMB share.
 
     .DESCRIPTION
-    The `Install-CFileShare` function installs a new file/SMB share. If the share doesn't exist, it is created. In
+    The `Install-CSmbShare` function installs a new file/SMB share. If the share doesn't exist, it is created. In
     Carbon 2.0, if a share does exist, its properties and permissions are updated in place, unless the share's path
     needs to change. Changing a share's path requires deleting and re-creating. Before Carbon 2.0, shares were always
     deleted and re-created.
@@ -26,10 +26,10 @@ function Install-CFileShare
     Get-CFileSharePermission
 
     .LINK
-    Test-CFileShare
+    Test-CSmbShare
 
     .LINK
-    Uninstall-CFileShare
+    Uninstall-CSmbShare
 
     .EXAMPLE
     Install-Share -Name TopSecretDocuments -Path C:\TopSecret -Description 'Share for our top secret documents.' -ReadAccess "Everyone" -FullAccess "Analysts"
@@ -128,7 +128,7 @@ function Install-CFileShare
     $changeMsgs = [Collections.Generic.List[String]]::New()
     $action = 'Creating'
 
-    if( (Test-CFileShare -Name $Name) )
+    if( (Test-CSmbShare -Name $Name) )
     {
         $share = Get-CFileShare -Name $Name
         [bool]$delete = $false
@@ -146,12 +146,12 @@ function Install-CFileShare
 
         if( $delete )
         {
-            Uninstall-CFileShare -Name $Name -InformationAction SilentlyContinue
+            Uninstall-CSmbShare -Name $Name -InformationAction SilentlyContinue
         }
     }
 
     $createdShare = $false
-    if (-not (Test-CFileShare -Name $Name))
+    if (-not (Test-CSmbShare -Name $Name))
     {
         Install-CDirectory -Path $Path
 
@@ -267,4 +267,4 @@ function Install-CFileShare
     }
 }
 
-Set-Alias -Name 'Install-SmbShare' -Value 'Install-CFileShare'
+Set-Alias -Name 'Install-SmbShare' -Value 'Install-CSmbShare'

@@ -1,16 +1,16 @@
 
-function Uninstall-CFileShare
+function Uninstall-CSmbShare
 {
     <#
     .SYNOPSIS
     Uninstalls/removes a file share from the local computer.
 
     .DESCRIPTION
-    The `Uninstall-CFileShare` function uses WMI to uninstall/remove a file share from the local computer, if it exists.
+    The `Uninstall-CSmbShare` function uses WMI to uninstall/remove a file share from the local computer, if it exists.
     Pass the name of the share to delete to the `Name` parameter (or pipe the name or share objects to the function). If
     the file share exists, it is deleted. If it doesn't exist, nothing hapens.
 
-    `Uninstall-CFileShare` was added in Carbon 2.0.
+    `Uninstall-CSmbShare` was added in Carbon 2.0.
 
     .LINK
     Get-CFileShare
@@ -19,16 +19,16 @@ function Uninstall-CFileShare
     Get-CFileSharePermission
 
     .LINK
-    Install-CFileShare
+    Install-CSmbShare
 
     .LINK
-    Test-CFileShare
+    Test-CSmbShare
 
     .EXAMPLE
-    Uninstall-CFileShare -Name 'CarbonShare'
+    Uninstall-CSmbShare -Name 'CarbonShare'
 
     Demonstrates how to uninstall/remove a share from the local computer. If the share does not exist,
-    `Uninstall-CFileShare` silently does nothing (i.e. it doesn't write an error).
+    `Uninstall-CSmbShare` silently does nothing (i.e. it doesn't write an error).
     #>
     [CmdletBinding(SupportsShouldProcess)]
     param(
@@ -43,7 +43,7 @@ function Uninstall-CFileShare
         Set-StrictMode -Version 'Latest'
         Use-CallerPreference -Cmdlet $PSCmdlet -Session $ExecutionContext.SessionState
 
-        if( -not (Test-CFileShare -Name $Name) )
+        if( -not (Test-CSmbShare -Name $Name) )
         {
             return
         }
