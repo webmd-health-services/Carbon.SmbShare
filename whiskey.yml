@@ -1,6 +1,8 @@
 
 Build:
-- PowerShell: prism install | Format-Table -Auto
+- PowerShell: |
+    prism install | Format-Table -Auto
+    prism install -Path .\Carbon.SmbShare | Format-Table -Auto
   .ExceptDuring: Clean
 
 - Version:
@@ -19,17 +21,17 @@ Build:
 - MergeFile:
     .OnlyBy: BuildServer
     # Builds run twice on some serves. Only run this step if the module hasn't been merged yet.
-    IfExists: Carbon.SmbShare\Functions\*.ps1
+    .IfExists: Carbon.SmbShare\Functions\*.ps1
     Path:
     - Carbon.SmbShare\Functions\*.ps1
     DestinationPath: Carbon.SmbShare\Carbon.SmbShare.psm1
     DeleteSourceFiles: true
     TextSeparator: "$(NewLine)$(NewLine)"
 
-- PowerShell: init.ps1
+- PowerShell: .\init.ps1
   .ExceptDuring: Clean
 
-- PowerShell: reset.ps1
+- PowerShell: .\reset.ps1
   .OnlyDuring: Clean
 
 - CopyFile:
