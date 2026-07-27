@@ -1,0 +1,14 @@
+{
+	"PSModules": [
+		{
+			"Name": "Carbon.Accounts",
+			"Version": "2.*"
+		},
+		{
+			"Name": "Carbon.FileSystem",
+			"Version": "1.*",
+			"AllowPrerelease": true
+		}
+	],
+	"PSModulesDirectoryName": "M"
+}

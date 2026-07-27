@@ -1,3 +1,6 @@
+using namespace System.Security.AccessControl
+using namespace System.Security.Principal
+
 # Copyright WebMD Health Services
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -18,6 +21,15 @@ Set-StrictMode -Version 'Latest'
 # Functions should use $script:moduleDirPath as the relative root from which to find things. A published module has its
 # function appended to this file, while a module in development has its functions in the Functions directory.
 $script:moduleDirPath = $PSScriptRoot
+
+$modulesDirPath = Join-Path -Path $script:moduleDirPath -ChildPath 'M' -Resolve
+# Import the .psm1 because PowerShell is limited to 10 nested scopes and importing the directory/.psd1 adds a scope.
+Import-Module -Name (Join-Path -Path $modulesDirPath -ChildPath 'Carbon.Accounts\Carbon.Accounts.psm1' -Resolve) `
+              -Function @('Resolve-CPrincipalName') `
+              -Verbose:$false
+Import-Module -Name (Join-Path -Path $modulesDirPath -ChildPath 'Carbon.FileSystem\Carbon.FileSystem.psm1' -Resolve) `
+              -Function @('Install-CDirectory') `
+              -Verbose:$false
 
 # Store each of your module's functions in its own file in the Functions directory. On the build server, your module's
 # functions will be appended to this file, so only dot-source files that exist on the file system. This allows
